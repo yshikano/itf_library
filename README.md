@@ -1,0 +1,1138 @@
+const COLUMN_CANDIDATES = {
+  year: ["年度", "Academic year", "academic_year", "year", "履修年度"],
+  course_number: ["科目番号", "Course Number", "course_number", "courseNo", "科目コード", "科目No"],
+  course_name: ["科目名", "Course Name", "course_name", "name", "授業科目名"],
+  instructor: ["担当教員", "Instructor", "instructor", "教員", "担当", "担当教員名"],
+  organization: ["組織", "Organization", "organization", "開設組織", "教育組織", "学群", "学位プログラム"],
+  term: ["開講時期", "Term", "term", "学期", "モジュール", "開講学期"],
+  weekday_period: ["曜時限", "Weekday and Period", "weekday_period", "曜日時限", "時限", "曜日・時限"],
+  credits: ["単位数", "Credits", "credits", "単位"],
+  syllabus_url: ["Syllabus URL", "syllabus_url", "URL", "シラバスURL", "詳細URL"],
+  reference_text: [
+    "教材・参考文献・配付資料等",
+    "教材・参考文献・配布資料等",
+    "教材・参考文献・配付資料",
+    "教材・参考文献",
+    "参考文献",
+    "教材",
+    "Course Materials",
+    "Teaching Materials",
+    "Materials/Reference",
+    "reference_text",
+    "syllabus"
+  ]
+};
+
+const SAMPLE_COURSES = [
+  {
+    course_id: "0A00001",
+    year: "2026",
+    course_number: "0A00001",
+    course_name: "量子情報科学",
+    instructor: "サンプル 太郎",
+    organization: "理工情報生命学術院",
+    term: "秋AB",
+    weekday_period: "火3,4",
+    credits: "2.0",
+    syllabus_url: "",
+    reference_text: "Nielsen, M. A. and Chuang, I. L., Quantum Computation and Quantum Information, Cambridge University Press, ISBN 9781107002173\nJohn Watrous, The Theory of Quantum Information, Cambridge University Press, 2018, ISBN 9781107180567\n必要に応じてmanabaで資料を配付する。"
+  },
+  {
+    course_id: "0A00002",
+    year: "2026",
+    course_number: "0A00002",
+    course_name: "量子力学特論",
+    instructor: "サンプル 花子",
+    organization: "理工情報生命学術院",
+    term: "春AB",
+    weekday_period: "月5,6",
+    credits: "2.0",
+    syllabus_url: "",
+    reference_text: "J. J. Sakurai and Jim Napolitano, Modern Quantum Mechanics, Cambridge University Press, ISBN 9781108473224\nNielsen, M. A. and Chuang, I. L., Quantum Computation and Quantum Information, Cambridge University Press, ISBN 9781107002173"
+  },
+  {
+    course_id: "0A00003",
+    year: "2026",
+    course_number: "0A00003",
+    course_name: "統計物理学",
+    instructor: "サンプル 次郎",
+    organization: "理工情報生命学術院",
+    term: "春C",
+    weekday_period: "金3,4",
+    credits: "1.0",
+    syllabus_url: "",
+    reference_text: "田崎晴明『統計力学 I』培風館, 2008, ISBN 9784563024376\n授業中に資料を配布する。"
+  }
+];
+
+const NON_BOOK_HINTS = [
+  "manaba",
+  "授業時",
+  "授業中",
+  "配付",
+  "配布",
+  "プリント",
+  "資料を配",
+  "webで公開",
+  "url",
+  "http://",
+  "https://"
+];
+
+const COURSE_COLUMNS = [
+  "course_id",
+  "year",
+  "course_number",
+  "course_name",
+  "instructor",
+  "organization",
+  "term",
+  "weekday_period",
+  "credits",
+  "syllabus_url",
+  "reference_text"
+];
+
+const REF_COLUMNS = [
+  "reference_id",
+  "canonical_key",
+  "year",
+  "course_number",
+  "course_name",
+  "instructor",
+  "organization",
+  "term",
+  "weekday_period",
+  "title",
+  "author",
+  "publisher",
+  "publication_year",
+  "isbn",
+  "material_type",
+  "source_text",
+  "extraction_confidence",
+  "holding_status",
+  "holding_confidence",
+  "libraries",
+  "cinii_url",
+  "opac_url",
+  "ncid",
+  "looked_up_at",
+  "lookup_error"
+];
+
+const state = {
+  courses: [],
+  refs: [],
+  holdings: loadHoldings(),
+  dataSource: "",
+  activeTab: "student",
+  selectedCourseIds: new Set(),
+  studentFilters: { year: "", organization: "", term: "", keyword: "" },
+  adminFilters: { year: "", organization: "", term: "", keyword: "" },
+  adminMaterialType: "",
+  adminSearch: "",
+  teacherQuery: "",
+  teacherSelectedKey: ""
+};
+
+const el = {};
+
+document.addEventListener("DOMContentLoaded", async () => {
+  cacheElements();
+  bindEvents();
+  await waitForLibraries();
+  await loadBundledData();
+});
+
+function cacheElements() {
+  const ids = [
+    "metricCourses", "metricRefs", "metricHoldings", "fileInput", "reloadBundledData", "resetSampleData", "dataStatus",
+    "ciniiAppId", "ciniiKid", "ciniiFano", "lookupLimit", "lookupVisible", "clearHoldings", "lookupStatus",
+    "downloadRefsCsv", "downloadCoursesCsv", "downloadHoldingsCsv", "downloadSelectedCsv", "studentFilters", "studentCourseList",
+    "selectedCourseCount", "selectedRefsTable", "selectVisibleCourses", "clearSelectedCourses", "teacherBookSearch",
+    "teacherBookCount", "teacherBooksTable", "teacherSelectedBook", "teacherBookDetails", "adminCourses", "adminRefs",
+    "adminBookRefs", "adminUniqueBooks", "adminFilters", "materialTypeFilter", "adminSearch", "adminRefsTable"
+  ];
+  for (const id of ids) el[id] = document.getElementById(id);
+}
+
+function bindEvents() {
+  document.querySelectorAll(".tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeTab = button.dataset.tab;
+      render();
+    });
+  });
+
+  el.fileInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setStatus(el.dataStatus, `読み込み中: ${file.name}`, "muted");
+    try {
+      const rawRows = await readUploadedFile(file);
+      setCourses(standardizeCourses(rawRows), `アップロード: ${file.name}`);
+      setStatus(el.dataStatus, `${file.name} を読み込みました。`, "ok");
+    } catch (error) {
+      console.error(error);
+      setStatus(el.dataStatus, `読み込みに失敗しました: ${error.message}`, "error");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  el.reloadBundledData.addEventListener("click", () => loadBundledData({ forceSample: false }));
+  el.resetSampleData.addEventListener("click", () => {
+    setCourses(standardizeCourses(SAMPLE_COURSES), "サンプルデータ");
+    setStatus(el.dataStatus, "サンプルデータに戻しました。", "ok");
+  });
+
+  el.lookupVisible.addEventListener("click", () => lookupUnresolvedBooks());
+  el.clearHoldings.addEventListener("click", () => {
+    state.holdings = {};
+    saveHoldings();
+    setStatus(el.lookupStatus, "照合結果を消去しました。", "ok");
+    render();
+  });
+
+  el.downloadRefsCsv.addEventListener("click", () => downloadCsv("itf_library_references.csv", enrichedRefs(), REF_COLUMNS));
+  el.downloadCoursesCsv.addEventListener("click", () => downloadCsv("itf_library_courses.csv", state.courses, COURSE_COLUMNS));
+  el.downloadHoldingsCsv.addEventListener("click", () => downloadCsv("itf_library_holdings.csv", Object.values(state.holdings), null));
+  el.downloadSelectedCsv.addEventListener("click", () => {
+    const rows = selectedRefs();
+    downloadCsv("itf_library_selected_course_references.csv", rows, REF_COLUMNS);
+  });
+
+  el.selectVisibleCourses.addEventListener("click", () => {
+    for (const course of filteredCourses(state.studentFilters)) state.selectedCourseIds.add(course.course_id);
+    renderStudentMode();
+  });
+  el.clearSelectedCourses.addEventListener("click", () => {
+    state.selectedCourseIds.clear();
+    renderStudentMode();
+  });
+
+  el.teacherBookSearch.addEventListener("input", () => {
+    state.teacherQuery = el.teacherBookSearch.value;
+    renderTeacherMode();
+  });
+
+  el.materialTypeFilter.addEventListener("change", () => {
+    state.adminMaterialType = el.materialTypeFilter.value;
+    renderAdminMode();
+  });
+  el.adminSearch.addEventListener("input", () => {
+    state.adminSearch = el.adminSearch.value;
+    renderAdminMode();
+  });
+}
+
+async function waitForLibraries() {
+  const deadline = Date.now() + 4000;
+  while ((!window.Papa || !window.XLSX) && Date.now() < deadline) {
+    await sleep(50);
+  }
+  if (!window.Papa) throw new Error("PapaParseを読み込めませんでした。ネットワーク接続を確認してください。");
+  if (!window.XLSX) throw new Error("SheetJSを読み込めませんでした。ネットワーク接続を確認してください。");
+}
+
+async function loadBundledData({ forceSample = false } = {}) {
+  if (forceSample) {
+    setCourses(standardizeCourses(SAMPLE_COURSES), "サンプルデータ");
+    return;
+  }
+  setStatus(el.dataStatus, "同梱CSVを確認しています...", "muted");
+  const candidates = ["./data/courses.csv", "./data/sample_courses.csv"];
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const text = await response.text();
+      const rows = parseCsvText(text);
+      if (rows.length > 0) {
+        setCourses(standardizeCourses(rows), url.includes("sample") ? "同梱サンプルCSV" : "docs/data/courses.csv");
+        setStatus(el.dataStatus, `${state.dataSource} を読み込みました。`, "ok");
+        return;
+      }
+    } catch (error) {
+      console.warn(`Failed to load ${url}`, error);
+    }
+  }
+  setCourses(standardizeCourses(SAMPLE_COURSES), "サンプルデータ");
+  setStatus(el.dataStatus, "同梱CSVが見つからないため、サンプルデータを表示しています。", "warn");
+}
+
+function setCourses(courses, dataSource) {
+  state.courses = ensureUniqueCourseIds(courses);
+  state.refs = extractReferences(state.courses);
+  state.dataSource = dataSource;
+  state.selectedCourseIds = new Set([...state.selectedCourseIds].filter((id) => state.courses.some((course) => course.course_id === id)));
+  if (!state.teacherSelectedKey || !state.refs.some((ref) => ref.canonical_key === state.teacherSelectedKey)) {
+    state.teacherSelectedKey = "";
+  }
+  render();
+}
+
+function ensureUniqueCourseIds(courses) {
+  const seen = new Map();
+  return courses.map((course, index) => {
+    let id = String(course.course_id || "").trim() || shortHash(course.year, course.course_name, course.instructor, index);
+    if (seen.has(id)) {
+      const count = seen.get(id) + 1;
+      seen.set(id, count);
+      id = `${id}-${shortHash(course.instructor, course.term, index, count, 6)}`;
+    } else {
+      seen.set(id, 1);
+    }
+    return { ...course, course_id: id };
+  });
+}
+
+async function readUploadedFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const buffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(buffer, { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    return window.XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+  }
+  const buffer = await file.arrayBuffer();
+  return parseCsvText(decodeCsvBuffer(buffer));
+}
+
+function decodeCsvBuffer(buffer) {
+  const candidates = ["utf-8", "shift-jis", "euc-jp"];
+  let bestText = "";
+  let bestScore = Infinity;
+  for (const encoding of candidates) {
+    try {
+      const text = new TextDecoder(encoding).decode(buffer);
+      const score = (text.match(/�/g) || []).length + (text.match(/Ã|縺|荳|譁/g) || []).length * 3;
+      if (score < bestScore) {
+        bestScore = score;
+        bestText = text;
+      }
+    } catch {
+      // Some browsers may not support every legacy encoding label.
+    }
+  }
+  return bestText || new TextDecoder().decode(buffer);
+}
+
+function parseCsvText(text) {
+  const result = window.Papa.parse(text, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (header) => String(header || "").trim()
+  });
+  if (result.errors?.length) {
+    const serious = result.errors.find((error) => error.code !== "UndetectableDelimiter");
+    if (serious) throw new Error(serious.message);
+  }
+  return result.data.filter((row) => Object.values(row).some((value) => String(value ?? "").trim() !== ""));
+}
+
+function standardizeCourses(rawRows) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const columns = Object.keys(rows[0] || {});
+  const columnMap = {};
+  for (const [target, candidates] of Object.entries(COLUMN_CANDIDATES)) {
+    columnMap[target] = firstExistingColumn(columns, candidates);
+  }
+
+  return rows.map((row, index) => {
+    const out = {};
+    for (const key of Object.keys(COLUMN_CANDIDATES)) {
+      const sourceColumn = columnMap[key];
+      out[key] = sourceColumn ? cleanCell(row[sourceColumn]) : "";
+    }
+    const baseId = out.course_number || shortHash(out.year, out.course_name, out.instructor, index);
+    out.course_id = baseId;
+    return out;
+  });
+}
+
+function extractReferences(courses) {
+  const rows = [];
+  for (const course of courses) {
+    const coursePart = {
+      course_id: course.course_id,
+      year: course.year,
+      course_number: course.course_number,
+      course_name: course.course_name,
+      instructor: course.instructor,
+      organization: course.organization,
+      term: course.term,
+      weekday_period: course.weekday_period,
+      syllabus_url: course.syllabus_url
+    };
+    const lines = splitReferenceText(course.reference_text);
+    for (const line of lines) {
+      rows.push({ ...coursePart, ...parseReferenceLine(line, coursePart) });
+    }
+  }
+  return rows;
+}
+
+function splitReferenceText(value) {
+  if (value === null || value === undefined) return [];
+  let text = String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  text = text.replace(/[•●○■◆◇▶▷]\s*/g, "\n");
+  const parts = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/^\s*[-*・]\s*/, "").trim();
+    if (!line) continue;
+    const semis = line.split(/(?<=\))\s*[;；]\s*|\s*[;；]\s*(?=(?:ISBN|[A-Z][A-Za-z]+,|[^\x00-\x7F]+『))/u);
+    for (const item of semis) {
+      const cleaned = item.trim().replace(/^[・,，;；]+|[・,，;；]+$/g, "");
+      if (cleaned) parts.push(cleaned);
+    }
+  }
+  return parts;
+}
+
+function parseReferenceLine(line, course) {
+  const materialType = classifyReference(line);
+  const isbn = extractIsbn(line);
+  const title = extractJapaneseBracketTitle(line) || extractEnglishTitle(line);
+  const author = extractAuthor(line, title);
+  const { publisher, publicationYear } = extractPublisherYear(line, title);
+  const canonicalKey = canonicalBookKey({ title, author, isbn });
+  let extractionConfidence = isbn ? "高" : (title && author ? "中" : "低");
+  if (["配付資料", "Web資料"].includes(materialType)) extractionConfidence = "対象外";
+  return {
+    reference_id: shortHash(course.course_id, line),
+    canonical_key: canonicalKey,
+    title,
+    author,
+    publisher,
+    publication_year: publicationYear,
+    isbn,
+    material_type: materialType,
+    source_text: line,
+    extraction_confidence: extractionConfidence
+  };
+}
+
+function classifyReference(line) {
+  const low = String(line || "").toLowerCase();
+  if (NON_BOOK_HINTS.some((hint) => low.includes(hint.toLowerCase()))) {
+    return low.includes("http") || low.includes("url") ? "Web資料" : "配付資料";
+  }
+  if (extractIsbn(line)) return "図書";
+  if (line.includes("雑誌") || low.includes("journal") || low.includes("article")) return "雑誌・論文";
+  return "図書候補";
+}
+
+function extractJapaneseBracketTitle(line) {
+  const pairs = [["『", "』"], ["「", "」"], ["《", "》"]];
+  for (const [left, right] of pairs) {
+    const start = line.indexOf(left);
+    const end = start >= 0 ? line.indexOf(right, start + left.length) : -1;
+    if (start >= 0 && end > start + 1) return line.slice(start + left.length, end).trim();
+  }
+  return "";
+}
+
+function cleanBibliographicParts(line) {
+  const withoutIsbn = String(line || "").replace(/ISBN(?:-1[03])?\s*[:：]?\s*[0-9Xx\-\s]+/gi, "");
+  return withoutIsbn
+    .split(/,|，/)
+    .map((part) => part.trim().replace(/^[,，。\s]+|[,，。\s]+$/g, ""))
+    .filter(Boolean);
+}
+
+function isYearPart(part) {
+  return /^(?:c?)(?:19|20)\d{2}$/i.test(String(part || "").trim());
+}
+
+function isPublisherish(part) {
+  const lower = String(part || "").toLowerCase();
+  const enHints = ["press", "publisher", "publishers", "publishing", "university", "springer", "wiley", "oxford", "cambridge", "routledge", "elsevier"];
+  const jpHints = ["出版", "書店", "書房", "館", "社", "培風館", "丸善", "岩波", "講談社", "共立"];
+  return enHints.some((hint) => lower.includes(hint)) || jpHints.some((hint) => String(part).includes(hint));
+}
+
+function titleIndexFromParts(parts) {
+  if (!parts.length) return null;
+  const usable = parts.map((part, index) => ({ part, index })).filter(({ part }) => !isYearPart(part));
+  if (!usable.length) return null;
+  const last = usable[usable.length - 1];
+  if (isPublisherish(last.part) && usable.length >= 2) return usable[usable.length - 2].index;
+  if (usable.length >= 2) return last.index;
+  return usable[0].index;
+}
+
+function extractEnglishTitle(line) {
+  const quoted = String(line || "").match(/["“]([^"”]{3,})["”]/);
+  if (quoted) return quoted[1].trim();
+  const parts = cleanBibliographicParts(line);
+  const index = titleIndexFromParts(parts);
+  if (index !== null) return parts[index].slice(0, 180);
+  return String(line || "").replace(/ISBN(?:-1[03])?\s*[:：]?\s*[0-9Xx\-\s]+/gi, "").trim().slice(0, 160);
+}
+
+function extractAuthor(line, title) {
+  if (line.includes("『") && title) return line.split("『", 1)[0].trim().replace(/[著編,，・\s]+$/g, "").slice(0, 160);
+  const parts = cleanBibliographicParts(line);
+  const index = titleIndexFromParts(parts);
+  if (index !== null && index > 0) return parts.slice(0, index).join(", ").slice(0, 180);
+  return "";
+}
+
+function extractPublisherYear(line, title) {
+  const yearMatch = String(line || "").match(/(19|20)\d{2}/);
+  const publicationYear = yearMatch ? yearMatch[0] : "";
+  let publisher = "";
+  if (title && line.includes(title)) {
+    let after = line.split(title, 2)[1] || "";
+    after = after.replace(/^[ 』」,，。、]+/g, "");
+    after = after.replace(/ISBN.*/i, "");
+    after = after.replace(/(19|20)\d{2}.*/, "");
+    after = after.trim().replace(/^[,，。、\s]+|[,，。、\s]+$/g, "");
+    if (after) publisher = after.split(/,|，|。/)[0].trim().slice(0, 140);
+  }
+  return { publisher, publicationYear };
+}
+
+function extractIsbn(value) {
+  const text = String(value || "").normalize("NFKC").toUpperCase();
+  const candidates = text.match(/(?:97[89][\-\s]?)?[0-9][0-9X][0-9X\-\s]{7,17}[0-9X]/g) || [];
+  for (const candidate of candidates) {
+    const normalized = normalizeIsbn(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function normalizeIsbn(value) {
+  const compact = String(value || "").normalize("NFKC").toUpperCase().replace(/[^0-9X]/g, "");
+  if (compact.length === 10 || compact.length === 13) return compact;
+  const isbn13 = compact.match(/97[89][0-9]{10}/);
+  if (isbn13) return isbn13[0];
+  const isbn10 = compact.match(/[0-9]{9}[0-9X]/);
+  if (isbn10) return isbn10[0];
+  return "";
+}
+
+function aggregateBooks(refRows) {
+  const grouped = new Map();
+  for (const ref of refRows) {
+    if (["配付資料", "Web資料"].includes(ref.material_type)) continue;
+    const key = ref.canonical_key || canonicalBookKey(ref);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        canonical_key: key,
+        title: ref.title,
+        author: ref.author,
+        isbn: ref.isbn,
+        material_type: ref.material_type,
+        courseIds: new Set(),
+        courseNames: new Set(),
+        instructors: new Set(),
+        holding_status: ref.holding_status || "未照合",
+        holding_confidence: ref.holding_confidence || "",
+        cinii_url: ref.cinii_url || "",
+        opac_url: ref.opac_url || "",
+        libraries: ref.libraries || ""
+      });
+    }
+    const item = grouped.get(key);
+    item.courseIds.add(ref.course_id);
+    if (ref.course_name) item.courseNames.add(ref.course_name);
+    if (ref.instructor) item.instructors.add(ref.instructor);
+    if (ref.holding_status && ref.holding_status !== "未照合") {
+      item.holding_status = ref.holding_status;
+      item.holding_confidence = ref.holding_confidence || item.holding_confidence;
+      item.cinii_url = ref.cinii_url || item.cinii_url;
+      item.opac_url = ref.opac_url || item.opac_url;
+      item.libraries = ref.libraries || item.libraries;
+    }
+  }
+  return [...grouped.values()]
+    .map((item) => ({
+      ...item,
+      course_count: item.courseIds.size,
+      courses: [...item.courseNames].sort().join(" / "),
+      instructors: [...item.instructors].sort().join(" / ")
+    }))
+    .sort((a, b) => b.course_count - a.course_count || a.title.localeCompare(b.title, "ja"));
+}
+
+function enrichedRefs() {
+  return state.refs.map((ref) => ({
+    ...ref,
+    ...(state.holdings[ref.canonical_key] || defaultHolding(ref))
+  }));
+}
+
+function defaultHolding(ref) {
+  if (["配付資料", "Web資料"].includes(ref.material_type)) {
+    return {
+      holding_status: "照合対象外",
+      holding_confidence: "対象外",
+      libraries: "",
+      cinii_url: "",
+      opac_url: "",
+      ncid: "",
+      looked_up_at: "",
+      lookup_error: ""
+    };
+  }
+  return {
+    holding_status: "未照合",
+    holding_confidence: "",
+    libraries: "",
+    cinii_url: ciniiHumanSearchUrl(ref),
+    opac_url: "",
+    ncid: "",
+    looked_up_at: "",
+    lookup_error: ""
+  };
+}
+
+function selectedRefs() {
+  const ids = state.selectedCourseIds;
+  return enrichedRefs().filter((ref) => ids.has(ref.course_id));
+}
+
+async function lookupUnresolvedBooks() {
+  const appid = el.ciniiAppId.value.trim();
+  const kid = el.ciniiKid.value.trim() || "KI000174";
+  const fano = el.ciniiFano.value.trim();
+  const limit = Math.max(1, Math.min(Number(el.lookupLimit.value || 30), 500));
+
+  if (!appid) {
+    setStatus(el.lookupStatus, "CiNiiアプリケーションIDを入力してください。未入力の場合は検索リンクのみ表示されます。", "warn");
+    return;
+  }
+
+  const books = aggregateBooks(enrichedRefs())
+    .filter((book) => book.canonical_key && !["照合対象外"].includes(book.holding_status))
+    .filter((book) => !state.holdings[book.canonical_key] || state.holdings[book.canonical_key].holding_status === "通信エラー")
+    .slice(0, limit);
+
+  if (!books.length) {
+    setStatus(el.lookupStatus, "未照合の図書候補がありません。", "ok");
+    return;
+  }
+
+  el.lookupVisible.disabled = true;
+  setStatus(el.lookupStatus, `照合中: 0 / ${books.length}`, "muted");
+
+  for (let index = 0; index < books.length; index += 1) {
+    const book = books[index];
+    const representative = state.refs.find((ref) => ref.canonical_key === book.canonical_key) || book;
+    try {
+      const holding = await lookupOneReference(representative, { appid, kid, fano });
+      state.holdings[book.canonical_key] = holding;
+      saveHoldings();
+      setStatus(el.lookupStatus, `照合中: ${index + 1} / ${books.length} — ${book.title || book.isbn}`, "muted");
+      renderMetricsOnly();
+    } catch (error) {
+      console.error(error);
+      state.holdings[book.canonical_key] = {
+        canonical_key: book.canonical_key,
+        holding_status: "通信エラー",
+        holding_confidence: "要再試行",
+        libraries: "",
+        cinii_url: ciniiHumanSearchUrl(representative),
+        opac_url: "",
+        ncid: "",
+        looked_up_at: new Date().toISOString(),
+        lookup_error: error.message || String(error)
+      };
+      saveHoldings();
+    }
+    await sleep(250);
+  }
+
+  el.lookupVisible.disabled = false;
+  setStatus(el.lookupStatus, `照合完了: ${books.length}件`, "ok");
+  render();
+}
+
+async function lookupOneReference(ref, { appid, kid, fano }) {
+  const apiUrl = ciniiApiSearchUrl(ref, { appid, kid, fano });
+  const response = await fetch(apiUrl);
+  if (!response.ok) throw new Error(`CiNii API HTTP ${response.status}`);
+  const data = await response.json();
+  const channel = Array.isArray(data?.["@graph"]) ? data["@graph"][0] : null;
+  const items = Array.isArray(channel?.items) ? channel.items : [];
+  const total = Number(channel?.["opensearch:totalResults"] || items.length || 0);
+  const base = {
+    canonical_key: ref.canonical_key,
+    cinii_url: ciniiHumanSearchUrl(ref),
+    opac_url: "",
+    ncid: "",
+    libraries: "",
+    looked_up_at: new Date().toISOString(),
+    lookup_error: ""
+  };
+
+  if (!items.length || total === 0) {
+    return {
+      ...base,
+      holding_status: ref.isbn ? "所蔵なし" : "所蔵なし候補",
+      holding_confidence: ref.isbn ? "中" : "低"
+    };
+  }
+
+  const first = items[0];
+  const ciniiUrl = pickId(first.link) || pickId(first) || base.cinii_url;
+  const ncid = extractNcid(ciniiUrl) || extractNcid(pickId(first["rdfs:seeAlso"])) || "";
+  const detail = await fetchCiniiDetail(first, appid).catch((error) => {
+    console.warn("detail fetch failed", error);
+    return null;
+  });
+  const owners = extractOwners(detail, { kid, fano });
+  const libraries = owners.map((owner) => owner.name).filter(Boolean).join(" / ");
+  const opacUrl = owners.map((owner) => owner.opacUrl).find(Boolean) || "";
+
+  return {
+    ...base,
+    holding_status: owners.length ? "所蔵あり" : "所蔵あり候補",
+    holding_confidence: ref.isbn ? "高" : "中",
+    libraries,
+    cinii_url: ciniiUrl ? ciniiUrl.replace(/^http:/, "https:") : base.cinii_url,
+    opac_url: opacUrl,
+    ncid,
+    lookup_error: owners.length ? "" : "所蔵検索ではヒットしましたが、詳細JSON-LDから筑波大学の所蔵館名を抽出できませんでした。"
+  };
+}
+
+async function fetchCiniiDetail(item, appid) {
+  let detailUrl = pickId(item?.["rdfs:seeAlso"]);
+  const itemLink = pickId(item?.link) || pickId(item);
+  if (!detailUrl && itemLink) detailUrl = `${itemLink.replace(/\/$/, "")}.json`;
+  if (!detailUrl) return null;
+  detailUrl = detailUrl.replace(/^http:/, "https:");
+  const url = new URL(detailUrl);
+  if (appid) url.searchParams.set("appid", appid);
+  const response = await fetch(url.toString());
+  if (!response.ok) throw new Error(`CiNii detail HTTP ${response.status}`);
+  return response.json();
+}
+
+function extractOwners(detail, { fano }) {
+  const graph = Array.isArray(detail?.["@graph"]) ? detail["@graph"][0] : null;
+  const rawOwners = graph?.["bibo:owner"];
+  const owners = Array.isArray(rawOwners) ? rawOwners : (rawOwners ? [rawOwners] : []);
+  return owners
+    .map((owner) => ({
+      id: pickId(owner),
+      name: stringValue(owner?.["foaf:name"]),
+      opacUrl: pickId(owner?.["rdfs:seeAlso"])
+    }))
+    .filter((owner) => {
+      if (fano && owner.id.includes(fano)) return true;
+      return owner.name.includes("筑波大学") || owner.id.includes("FA001652");
+    });
+}
+
+function ciniiApiSearchUrl(ref, { appid, kid, fano }) {
+  const params = new URLSearchParams();
+  params.set("format", "json");
+  params.set("count", "10");
+  params.set("type", "1");
+  params.set("appid", appid);
+  if (ref.isbn) {
+    params.set("isbn", normalizeIsbn(ref.isbn));
+  } else {
+    if (ref.title) params.set("title", ref.title);
+    if (ref.author) params.set("author", ref.author.split(/[;；\/／]/)[0].slice(0, 80));
+  }
+  if (fano) params.set("fano", fano);
+  else if (kid) params.set("kid", kid);
+  return `https://ci.nii.ac.jp/books/opensearch/search?${params.toString()}`;
+}
+
+function ciniiHumanSearchUrl(ref) {
+  const params = new URLSearchParams();
+  if (ref.isbn) params.set("isbn", normalizeIsbn(ref.isbn));
+  else if (ref.title) params.set("title", ref.title);
+  params.set("kid", el.ciniiKid?.value?.trim() || "KI000174");
+  params.set("type", "1");
+  return `https://ci.nii.ac.jp/books/search?${params.toString()}`;
+}
+
+function render() {
+  document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.activeTab));
+  document.querySelectorAll(".tabPanel").forEach((panel) => panel.classList.toggle("active", panel.id === state.activeTab));
+  renderMetricsOnly();
+  renderMaterialTypeOptions();
+  renderFilters(el.studentFilters, state.studentFilters, renderStudentMode);
+  renderFilters(el.adminFilters, state.adminFilters, renderAdminMode);
+  if (state.activeTab === "student") renderStudentMode();
+  if (state.activeTab === "teacher") renderTeacherMode();
+  if (state.activeTab === "admin") renderAdminMode();
+}
+
+function renderMetricsOnly() {
+  const refs = enrichedRefs();
+  const holdingsCount = Object.values(state.holdings).filter((holding) => holding.holding_status && holding.holding_status !== "未照合").length;
+  setText(el.metricCourses, formatNumber(state.courses.length));
+  setText(el.metricRefs, formatNumber(state.refs.length));
+  setText(el.metricHoldings, formatNumber(holdingsCount));
+  setText(el.adminCourses, formatNumber(state.courses.length));
+  setText(el.adminRefs, formatNumber(state.refs.length));
+  setText(el.adminBookRefs, formatNumber(refs.filter((ref) => !["配付資料", "Web資料"].includes(ref.material_type)).length));
+  setText(el.adminUniqueBooks, formatNumber(aggregateBooks(refs).length));
+}
+
+function renderFilters(container, filters, onChange) {
+  const years = uniqueValues(state.courses, "year");
+  const orgs = uniqueValues(state.courses, "organization");
+  const terms = uniqueValues(state.courses, "term");
+  const idBase = container.id;
+  container.innerHTML = `
+    <label>年度
+      <select id="${idBase}Year">
+        <option value="">すべて</option>
+        ${years.map((value) => `<option value="${escapeAttr(value)}" ${filters.year === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+      </select>
+    </label>
+    <label>開設組織
+      <select id="${idBase}Org">
+        <option value="">すべて</option>
+        ${orgs.map((value) => `<option value="${escapeAttr(value)}" ${filters.organization === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+      </select>
+    </label>
+    <label>開講時期
+      <select id="${idBase}Term">
+        <option value="">すべて</option>
+        ${terms.map((value) => `<option value="${escapeAttr(value)}" ${filters.term === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+      </select>
+    </label>
+    <label>キーワード
+      <input id="${idBase}Keyword" type="search" value="${escapeAttr(filters.keyword)}" placeholder="科目名・教員・科目番号" />
+    </label>
+  `;
+  document.getElementById(`${idBase}Year`).addEventListener("change", (event) => { filters.year = event.target.value; onChange(); });
+  document.getElementById(`${idBase}Org`).addEventListener("change", (event) => { filters.organization = event.target.value; onChange(); });
+  document.getElementById(`${idBase}Term`).addEventListener("change", (event) => { filters.term = event.target.value; onChange(); });
+  document.getElementById(`${idBase}Keyword`).addEventListener("input", (event) => { filters.keyword = event.target.value; onChange(); });
+}
+
+function renderStudentMode() {
+  const filtered = filteredCourses(state.studentFilters);
+  const maxShown = 250;
+  const shown = filtered.slice(0, maxShown);
+  el.studentCourseList.innerHTML = `
+    <div class="status ${filtered.length > maxShown ? "warn" : "muted"}">
+      候補科目: ${formatNumber(filtered.length)}件${filtered.length > maxShown ? `（先頭${maxShown}件のみ表示。キーワードで絞り込んでください。）` : ""}
+    </div>
+    ${shown.map((course) => `
+      <label class="checkItem">
+        <input type="checkbox" data-course-id="${escapeAttr(course.course_id)}" ${state.selectedCourseIds.has(course.course_id) ? "checked" : ""} />
+        <span>
+          <strong>${escapeHtml(course.course_name || "無題の科目")}</strong>
+          <small>${escapeHtml([course.course_number, course.instructor, course.term, course.weekday_period].filter(Boolean).join("｜"))}</small>
+          <small>${escapeHtml(course.organization || "")}</small>
+        </span>
+      </label>
+    `).join("")}
+  `;
+
+  el.studentCourseList.querySelectorAll("input[type='checkbox']").forEach((checkbox) => {
+    checkbox.addEventListener("change", (event) => {
+      const id = event.target.dataset.courseId;
+      if (event.target.checked) state.selectedCourseIds.add(id);
+      else state.selectedCourseIds.delete(id);
+      renderSelectedRefs();
+    });
+  });
+  renderSelectedRefs();
+}
+
+function renderSelectedRefs() {
+  const rows = selectedRefs();
+  setText(el.selectedCourseCount, `${state.selectedCourseIds.size}科目`);
+  renderTable(el.selectedRefsTable, rows, [
+    { key: "course_name", label: "科目名" },
+    { key: "title", label: "文献名", format: longText },
+    { key: "author", label: "著者", format: longText },
+    { key: "isbn", label: "ISBN" },
+    { key: "material_type", label: "種別" },
+    { key: "holding_status", label: "所蔵", format: statusBadge },
+    { key: "libraries", label: "所蔵館", format: longText },
+    { key: "opac_url", label: "OPAC", format: linkCell },
+    { key: "source_text", label: "原文", format: longText }
+  ], "科目を選択すると文献リストが表示されます。");
+}
+
+function renderTeacherMode() {
+  el.teacherBookSearch.value = state.teacherQuery;
+  const query = normalizeText(state.teacherQuery);
+  const books = aggregateBooks(enrichedRefs()).filter((book) => {
+    if (!query) return true;
+    return [book.title, book.author, book.isbn, book.courses, book.instructors].some((value) => normalizeText(value).includes(query));
+  });
+  const shown = books.slice(0, 200);
+  setText(el.teacherBookCount, `${formatNumber(books.length)}件`);
+  renderTable(el.teacherBooksTable, shown, [
+    {
+      key: "canonical_key",
+      label: "選択",
+      format: (value) => `<button class="button secondary small selectBook" data-book-key="${escapeAttr(value)}" type="button">見る</button>`
+    },
+    { key: "title", label: "書名", format: longText },
+    { key: "author", label: "著者", format: longText },
+    { key: "isbn", label: "ISBN" },
+    { key: "course_count", label: "授業数" },
+    { key: "holding_status", label: "所蔵", format: statusBadge },
+    { key: "libraries", label: "所蔵館", format: longText }
+  ], "図書候補がありません。管理モードでKdBデータを確認してください。", { allowHtml: true });
+
+  el.teacherBooksTable.querySelectorAll(".selectBook").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.teacherSelectedKey = button.dataset.bookKey;
+      renderTeacherMode();
+    });
+  });
+
+  if (!state.teacherSelectedKey && shown.length) state.teacherSelectedKey = shown[0].canonical_key;
+  const selectedBook = books.find((book) => book.canonical_key === state.teacherSelectedKey);
+  setText(el.teacherSelectedBook, selectedBook ? truncate(selectedBook.title || selectedBook.isbn || "選択中", 32) : "未選択");
+  const detailRows = selectedBook ? enrichedRefs().filter((ref) => ref.canonical_key === selectedBook.canonical_key) : [];
+  renderTable(el.teacherBookDetails, detailRows, [
+    { key: "year", label: "年度" },
+    { key: "course_number", label: "科目番号" },
+    { key: "course_name", label: "科目名", format: longText },
+    { key: "instructor", label: "担当教員", format: longText },
+    { key: "organization", label: "開設組織", format: longText },
+    { key: "term", label: "開講時期" },
+    { key: "holding_status", label: "所蔵", format: statusBadge },
+    { key: "opac_url", label: "OPAC", format: linkCell },
+    { key: "cinii_url", label: "CiNii", format: linkCell }
+  ], "左の図書を選択してください。");
+}
+
+function renderAdminMode() {
+  renderMetricsOnly();
+  renderMaterialTypeOptions();
+  let rows = enrichedRefs().filter((ref) => filteredCourses(state.adminFilters).some((course) => course.course_id === ref.course_id));
+  if (state.adminMaterialType) rows = rows.filter((ref) => ref.material_type === state.adminMaterialType);
+  const search = normalizeText(state.adminSearch);
+  if (search) {
+    rows = rows.filter((ref) => REF_COLUMNS.some((key) => normalizeText(ref[key]).includes(search)));
+  }
+  const shown = rows.slice(0, 1000);
+  renderTable(el.adminRefsTable, shown, [
+    { key: "year", label: "年度" },
+    { key: "course_number", label: "科目番号" },
+    { key: "course_name", label: "科目名", format: longText },
+    { key: "instructor", label: "担当教員", format: longText },
+    { key: "title", label: "文献名", format: longText },
+    { key: "author", label: "著者", format: longText },
+    { key: "isbn", label: "ISBN" },
+    { key: "material_type", label: "種別" },
+    { key: "extraction_confidence", label: "抽出" },
+    { key: "holding_status", label: "所蔵", format: statusBadge },
+    { key: "holding_confidence", label: "照合" },
+    { key: "libraries", label: "所蔵館", format: longText },
+    { key: "opac_url", label: "OPAC", format: linkCell },
+    { key: "cinii_url", label: "CiNii", format: linkCell },
+    { key: "source_text", label: "原文", format: longText }
+  ], "参考文献が抽出されていません。", { caption: rows.length > shown.length ? `先頭${shown.length}件のみ表示しています。CSV出力には全件が含まれます。` : "" });
+}
+
+function renderMaterialTypeOptions() {
+  const current = state.adminMaterialType;
+  const types = [...new Set(state.refs.map((ref) => ref.material_type).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+  el.materialTypeFilter.innerHTML = `<option value="">資料種別: すべて</option>${types.map((type) => `<option value="${escapeAttr(type)}" ${current === type ? "selected" : ""}>${escapeHtml(type)}</option>`).join("")}`;
+}
+
+function filteredCourses(filters) {
+  const keyword = normalizeText(filters.keyword);
+  return state.courses.filter((course) => {
+    if (filters.year && course.year !== filters.year) return false;
+    if (filters.organization && course.organization !== filters.organization) return false;
+    if (filters.term && course.term !== filters.term) return false;
+    if (keyword) {
+      const hay = [course.course_name, course.instructor, course.course_number, course.organization, course.term].map(normalizeText).join(" ");
+      if (!hay.includes(keyword)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTable(container, rows, columns, emptyMessage = "該当するデータがありません。", options = {}) {
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty">${escapeHtml(emptyMessage)}</div>`;
+    return;
+  }
+  const caption = options.caption ? `<div class="status warn">${escapeHtml(options.caption)}</div>` : "";
+  const thead = `<thead><tr>${columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("")}</tr></thead>`;
+  const tbody = `<tbody>${rows.map((row) => `<tr>${columns.map((col) => {
+    const raw = row[col.key] ?? "";
+    const formatted = col.format ? col.format(raw, row) : escapeHtml(String(raw));
+    return `<td>${formatted}</td>`;
+  }).join("")}</tr>`).join("")}</tbody>`;
+  container.innerHTML = `${caption}<table>${thead}${tbody}</table>`;
+}
+
+function statusBadge(value) {
+  const text = String(value || "未照合");
+  let cls = "";
+  if (text.includes("所蔵あり")) cls = "ok";
+  else if (text.includes("なし") || text.includes("エラー")) cls = text.includes("候補") ? "warn" : "danger";
+  else if (text.includes("対象外")) cls = "warn";
+  return `<span class="statusBadge ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function linkCell(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">開く</a>`;
+}
+
+function longText(value) {
+  const text = String(value || "");
+  return `<span title="${escapeAttr(text)}">${escapeHtml(truncate(text, 90))}</span>`;
+}
+
+function downloadCsv(filename, rows, preferredColumns = null) {
+  const csv = toCsv(rows, preferredColumns);
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows, preferredColumns = null) {
+  const data = Array.isArray(rows) ? rows : [];
+  const columns = preferredColumns || [...new Set(data.flatMap((row) => Object.keys(row)))];
+  const escapeCsv = (value) => {
+    const text = String(value ?? "").replace(/\r?\n/g, "\n");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  return [columns.map(escapeCsv).join(","), ...data.map((row) => columns.map((column) => escapeCsv(row[column])).join(","))].join("\n");
+}
+
+function loadHoldings() {
+  try {
+    return JSON.parse(localStorage.getItem("itf_library_holdings") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveHoldings() {
+  localStorage.setItem("itf_library_holdings", JSON.stringify(state.holdings));
+}
+
+function firstExistingColumn(columns, candidates) {
+  const normalized = new Map(columns.map((column) => [compactText(column), column]));
+  for (const candidate of candidates) {
+    const key = compactText(candidate);
+    if (normalized.has(key)) return normalized.get(key);
+  }
+  for (const candidate of candidates) {
+    const key = compactText(candidate);
+    for (const column of columns) {
+      const ckey = compactText(column);
+      if (key && (ckey.includes(key) || key.includes(ckey))) return column;
+    }
+  }
+  return null;
+}
+
+function canonicalBookKey({ title = "", author = "", isbn = "" }) {
+  const cleanIsbn = normalizeIsbn(isbn);
+  if (cleanIsbn) return `isbn:${cleanIsbn}`;
+  const t = compactText(title).slice(0, 120);
+  const a = compactText(author).slice(0, 60);
+  if (t && a) return `ta:${t}:${a}`;
+  if (t) return `title:${t}`;
+  return `unknown:${shortHash(title, author, isbn)}`;
+}
+
+function normalizeText(value) {
+  return String(value ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function compactText(value) {
+  return normalizeText(value).replace(/[\s\-:：,，.。;；/／\\()（）\[\]〖〗『』「」'"`]+/g, "");
+}
+
+function cleanCell(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function shortHash(...parts) {
+  let length = 12;
+  if (typeof parts[parts.length - 1] === "number") length = parts.pop();
+  const text = parts.map((part) => String(part ?? "")).join("|");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0").slice(0, length);
+}
+
+function uniqueValues(rows, key) {
+  return [...new Set(rows.map((row) => String(row[key] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+function pickId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return pickId(value[0]);
+  return value["@id"] || value.id || value.href || value["rdf:resource"] || "";
+}
+
+function stringValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(stringValue).filter(Boolean).join(" / ");
+  return value["@value"] || value.name || value["foaf:name"] || "";
+}
+
+function extractNcid(url) {
+  const match = String(url || "").match(/\/ncid\/([^/.?#]+)/);
+  return match ? match[1] : "";
+}
+
+function setText(target, text) {
+  if (target) target.textContent = text;
+}
+
+function setStatus(target, message, level = "muted") {
+  if (!target) return;
+  target.textContent = message;
+  target.className = `status ${level}`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("ja-JP");
+}
+
+function truncate(value, max = 80) {
+  const text = String(value || "");
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
